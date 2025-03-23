@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI
 from output_models import AI_Agent_Vote
-from supabase import create_client
+from utils import get_supabase_client
 
 def create_agent_structured_output(llm, 
     output_structure,):
@@ -39,13 +39,7 @@ def insert_vote_to_supabase(match_id, winner_selection, margin_selection, reason
     """
     Insert vote data into Supabase AI_VOTES table.
     """
-    supabase_url = os.getenv('SUPABASE_URL')
-    supabase_key = os.getenv('SUPABASE_KEY')
-    
-    if not supabase_url or not supabase_key:
-        raise ValueError("Please set both SUPABASE_URL and SUPABASE_KEY environment variables")
-    
-    supabase = create_client(supabase_url, supabase_key)
+    supabase = get_supabase_client()
     
     data = {
         'match_id': match_id,
@@ -106,9 +100,9 @@ def ask_perplexity(question):
 
 def main():
     # Example question
-    match_id = 3
-    match = "CSK vs MI"
-    match_date = "23rd March 2025"
+    match_id = 4
+    match = "DC vs LSG"
+    match_date = "24th March 2025"
 
     question = f"""Answer two questions related to Match No {match_id}: {match} on {match_date}.
 Question 1: who will win the match?
@@ -128,7 +122,7 @@ Think step by step and reason out your answer. For example, for victory margin, 
     print("Asking Perplexity:", question)
     print("\nResponse:")
     response = ask_perplexity(question)
-
+    print(response)
     openai_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=8192)
 
     agent = create_agent_structured_output(openai_llm, 
