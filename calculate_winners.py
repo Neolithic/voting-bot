@@ -108,12 +108,12 @@ def calculate_points(correct_option, votes):
     num_winners = sum(1 for vote in votes.values() if vote == correct_option)
     
     # Calculate points per winner (if any)
-    points_per_winner = pot_size // num_winners if num_winners > 0 else 0
+    points_per_winner = pot_size / num_winners if num_winners > 0 else 0
     
     # Assign points
     for user_id, vote in votes.items():
         if vote == correct_option:
-            winners[user_id] = points_per_winner
+            winners[user_id] = points_per_winner + LOSS_POINTS
         else:
             # Both incorrect votes and no votes (None) count as losses
             losers[user_id] = LOSS_POINTS
