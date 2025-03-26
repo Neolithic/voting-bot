@@ -3,6 +3,8 @@ This script is used to query Perplexity API for answers to questions and store r
 """
 import os
 import requests
+from datetime import datetime
+import pytz
 from dotenv import load_dotenv
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI
@@ -19,7 +21,8 @@ def create_agent_structured_output(llm,
 Remove any references quoted like [1], [2], etc. in the reasoning.
 For winner selection, keep name of the team as in the question. That is abbreviated name of the team.
 For margin selection, responsd with A, B, C, or D as in the question.
-
+Give detailed reasoning for the winner selection and margin selection.
+Also, do not give your estimated probability of each option for both questions (winner and margin).
 """
 
     prompt = ChatPromptTemplate.from_messages(
@@ -48,10 +51,32 @@ def insert_vote_to_supabase(match_id, winner_selection, margin_selection, reason
         'reasoning': reasoning
     }
     
+    votes_data = [{
+        'match_id': match_id,
+        'user_email': 'predictorai01@gmail.com',
+        'user_name': 'AI Predictor',
+        'poll_type': 'winner',
+        'option_voted': winner_selection,
+        'created_timestamp': datetime.now(pytz.UTC).isoformat()
+    },
+    {
+        'match_id': match_id,
+        'user_email': 'predictorai01@gmail.com',
+        'poll_type': 'victory_margin',
+        'option_voted': margin_selection,
+        'created_timestamp': datetime.now(pytz.UTC).isoformat()
+    }
+    ]
     try:
         result = supabase.table('AI_VOTES').insert(data).execute()
+
+        for vote in votes_data:
+            supabase.table('VOTES').insert(vote).execute()
+
         print("Successfully inserted vote into Supabase")
         return result
+    
+
     except Exception as e:
         print(f"Error inserting into Supabase: {str(e)}")
         raise
@@ -100,9 +125,9 @@ def ask_perplexity(question):
 
 def main():
     # Example question
-    match_id = 4
-    match = "DC vs LSG"
-    match_date = "24th March 2025"
+    match_id = 7
+    match = "SRH vs LSG"
+    match_date = "27th March 2025"
 
     question = f"""Answer two questions related to Match No {match_id}: {match} on {match_date}.
 Question 1: who will win the match?
@@ -117,6 +142,7 @@ Also, take into account team composition, players experience in IPL and on the g
 
 Think step by step and reason out your answer. For example, for victory margin, think about expected scores of the teams.
 
+Also, tell your estimated probability of each option for both questions (winner and margin).
 """
 
     print("Asking Perplexity:", question)
@@ -141,6 +167,8 @@ Think step by step and reason out your answer. For example, for victory margin, 
         margin_selection=final_response.margin_selection,
         reasoning=final_response.reasoning
     )
+
+
 
 if __name__ == "__main__":
     main() 
