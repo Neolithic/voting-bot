@@ -3,7 +3,7 @@ This script is used to query Perplexity API for answers to questions and store r
 """
 import os
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 from dotenv import load_dotenv
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -62,6 +62,7 @@ def insert_vote_to_supabase(match_id, winner_selection, margin_selection, reason
     {
         'match_id': match_id,
         'user_email': 'predictorai01@gmail.com',
+        'user_name': 'AI Predictor',
         'poll_type': 'victory_margin',
         'option_voted': margin_selection,
         'created_timestamp': datetime.now(pytz.UTC).isoformat()
@@ -123,13 +124,48 @@ def ask_perplexity(question):
     except requests.exceptions.RequestException as e:
         return f"Error making request: {str(e)}"
 
-def main():
-    # Example question
-    match_id = 7
-    match = "SRH vs LSG"
-    match_date = "27th March 2025"
+def get_next_match_without_ai_perspective():
+    """
+    Get the next match from MATCHES table that doesn't have an AI perspective yet.
+    """
+    supabase = get_supabase_client()
+    
+    # Get current time in UTC
+    current_time = datetime.now(pytz.UTC)
+    # Get time 24 hours from now
+    future_time = current_time + timedelta(hours=24)
+    
+    # Query to get matches that:
+    # 1. Are in the next 24 hours
+    # 2. Don't have an AI perspective yet
+    query = supabase.table('MATCHES').select('*').gte('Poll_Close_Time', current_time.isoformat()).lte('Poll_Close_Time', future_time.isoformat())
+    
+    # Get all matches in this time range
+    matches = query.execute()
+    
+    if not matches.data:
+        raise ValueError("No matches found in the next 24 hours")
+    
+    # For each match, check if it has an AI perspective
+    for match in matches.data:
+        # Check if there's an AI vote for this match
+        ai_vote = supabase.table('AI_VOTES').select('*').eq('match_id', match['Match_ID']).execute()
+        
+        if not ai_vote.data:
+            return match
+    
+    raise ValueError("No matches found without AI perspective in the next 24 hours")
 
-    question = f"""Answer two questions related to Match No {match_id}: {match} on {match_date}.
+def main():
+    # Get the next match that needs AI perspective
+    match = get_next_match_without_ai_perspective()
+    
+    match_id = match['Match_ID']
+    match_teams = f"{match['Team_1']} vs {match['Team_2']}"
+    
+    match_date = match['Date']
+
+    question = f"""Answer two questions related to Match No {match_id}: {match_teams} on {match_date}.
 Question 1: who will win the match?
 Question 2: What will be the victory margin? Your options are:\n
 Option A: 0-10 runs / 4 or less balls remaining
