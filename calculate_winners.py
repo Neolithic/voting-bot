@@ -50,6 +50,7 @@ def get_eligible_users(supabase, match_id):
         response = supabase.table('USERS')\
             .select('user_email')\
             .lte('starting_match_id', match_id)\
+            .or_('last_match_id.is.null,last_match_id.gte.' + str(match_id))\
             .execute()
         
         return [user['user_email'] for user in response.data]
