@@ -168,13 +168,14 @@ def main():
     question = f"""Answer two questions related to Match No {match_id}: {match_teams} on {match_date}.
 Question 1: who will win the match?
 Question 2: What will be the victory margin? Your options are:\n
-Option A: 0-10 runs / 4 or less balls remaining
-Option B: 11-20 runs / 5-9 balls remaining
-Option C: 21-35 runs / 10-14 balls remaining
-Option D: 36+ runs / 15+ balls remaining
+Option A: 0-12 runs / 6 or less balls remaining
+Option B: 13-25 runs / 7-12 balls remaining
+Option C: 26-40 runs / 13-22 balls remaining
+Option D: 41+ runs / 23+ balls remaining
 
 Take into account the current form of the teams, the pitch, and the weather conditions.
 Also, take into account team composition, players experience in IPL and on the ground where match is being played.
+Also, think about latest results of the teams in current IPL season.
 
 Think step by step and reason out your answer. For example, for victory margin, think about expected scores of the teams.
 
