@@ -9,13 +9,24 @@ from utils import get_supabase_client
 # Load environment variables
 load_dotenv()
 
+def set_valid_to_false(supabase, match_id, poll_type):
+    """Set the is_valid flag to false for a given match_id and poll_type."""
+    try:
+        response = supabase.table('VOTING_RESULTS')\
+            .update({'is_valid': False})\
+            .eq('match_id', match_id)\
+            .eq('poll_type', poll_type)\
+            .execute()
+        print("Setting these rows as invalid: ", response.data)
+    except Exception as e:
+        print(f"Error setting is_valid to false for match {match_id}, poll type {poll_type}: {str(e)}")
+        raise
+
 def get_unprocessed_matches(supabase):
     """Get match results that haven't been processed in VOTING_RESULTS table."""
     try:
         # First get all match_id and poll_type combinations from VOTING_RESULTS
-        processed = supabase.table('VOTING_RESULTS')\
-            .select('match_id, poll_type')\
-            .execute()
+        processed = supabase.rpc("get_processed_matches").execute()
 
         # Create a set of processed (match_id, poll_type) tuples
         processed_set = {
@@ -26,13 +37,25 @@ def get_unprocessed_matches(supabase):
         # Get all results
         results = supabase.table('RESULTS').select('*').execute()
 
+        #also get incorrect VOTING_RESULTS matches.
+        #incorrect is defined as if there if any match_id, user_email, poll_type 
+        # combination that had multiple rows valid
+        incorrect_results = supabase.rpc('get_invalid_voting_results_polls').execute()
+        incorrect_results_set = {
+            (item['match_id'], item['poll_type'])
+            for item in incorrect_results.data
+        }
+
+        for match_id, poll_type in incorrect_results_set:
+            set_valid_to_false(supabase, match_id, poll_type)
+
         # Filter out results that have already been processed
         unprocessed_results = []
         for result in results.data:
             match_id = result['match_id']
             poll_type = result['poll_type']
 
-            if (match_id, poll_type) not in processed_set:
+            if (match_id, poll_type) not in processed_set or (match_id, poll_type) in incorrect_results_set:
                 unprocessed_results.append({
                     'match_id': match_id,
                     'poll_type': poll_type,
@@ -130,7 +153,8 @@ def store_voting_results(supabase, match_id, poll_type, winners, losers):
                 'match_id': match_id,
                 'poll_type': poll_type,
                 'user_email': user_email,
-                'amount': points,                
+                'amount': points,
+                'is_valid': True
             }
             for user_email, points in winners.items()
         ]
@@ -142,6 +166,7 @@ def store_voting_results(supabase, match_id, poll_type, winners, losers):
                 'poll_type': poll_type,
                 'user_email': user_email,
                 'amount': points,
+                'is_valid': True
             }
             for user_email, points in losers.items()
         ]
