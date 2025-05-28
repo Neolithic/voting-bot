@@ -30,7 +30,7 @@ def get_unprocessed_matches(supabase):
 
         # Create a set of processed (match_id, poll_type) tuples
         processed_set = {
-            (item['match_id'], item['poll_type']) 
+            (item['match_id'], item['poll_type'])
             for item in processed.data
         }
 
@@ -38,7 +38,7 @@ def get_unprocessed_matches(supabase):
         results = supabase.table('RESULTS').select('*').execute()
 
         #also get incorrect VOTING_RESULTS matches.
-        #incorrect is defined as if there if any match_id, user_email, poll_type 
+        #incorrect is defined as if there if any match_id, user_email, poll_type
         # combination that had multiple rows valid
         incorrect_results = supabase.rpc('get_invalid_voting_results_polls').execute()
         incorrect_results_set = {
@@ -75,11 +75,39 @@ def get_eligible_users(supabase, match_id):
             .lte('starting_match_id', match_id)\
             .or_('last_match_id.is.null,last_match_id.gte.' + str(match_id))\
             .execute()
-        
+
         return [user['user_email'] for user in response.data]
     except Exception as e:
         print(f"Error fetching eligible users for match {match_id}: {str(e)}")
         raise
+
+def get_eligible_users_adhoc_polls(supabase, match_id, poll_type):
+    """Get all users for adhoc polls"""
+
+    response = supabase.table('VOTES')\
+            .select('user_email')\
+            .eq('match_id', match_id)\
+            .eq('poll_type', poll_type)\
+            .execute()
+
+    if response.data:
+        all_users = [vote['user_email'] for vote in response.data]
+        return list(set(all_users))
+
+    raise ValueError(f"No users found for adhoc poll {match_id}, poll type {poll_type}")
+
+def get_adhoc_poll_type(supabase, match_id):
+    """Get the poll type for an adhoc poll"""
+    response = supabase.table('ADHOC_POLLS')\
+        .select('poll_type, match_id')\
+        .eq('match_id', match_id)\
+        .execute()
+    
+    if response.data:
+        poll_types = [poll['poll_type'] for poll in response.data]
+        return list(set(poll_types))
+
+    return []
 
 def get_latest_votes(supabase, match_id, poll_type):
     """
@@ -87,12 +115,16 @@ def get_latest_votes(supabase, match_id, poll_type):
     Users who haven't voted are counted as losses.
     """
     try:
-        # Get all eligible users for this match
-        eligible_users = get_eligible_users(supabase, match_id)
-        
-        # Initialize all eligible users with no vote
+
+        adhoc_poll_types = get_adhoc_poll_type(supabase, match_id)
+
+        if poll_type in adhoc_poll_types:
+            eligible_users = get_eligible_users_adhoc_polls(supabase, match_id, poll_type)
+        else:
+            eligible_users = get_eligible_users(supabase, match_id)
+
         latest_votes = {user_email: None for user_email in eligible_users}
-        
+
         # Query votes for the specific match and poll type, ordered by created_timestamp
         response = supabase.table('VOTES')\
             .select('user_email, option_voted, created_timestamp')\
@@ -112,14 +144,31 @@ def get_latest_votes(supabase, match_id, poll_type):
         print(f"Error fetching votes for match {match_id}, poll type {poll_type}: {str(e)}")
         raise
 
-def calculate_points(correct_option, votes):
+def get_amount_per_vote(supabase, match_id):
+    """Get the amount per vote for a given match."""
+
+    response = supabase.table('MATCHES')\
+            .select('amount_per_poll')\
+            .eq('Match_ID', match_id)\
+            .execute()
+
+    if response.data and len(response.data) == 1:
+            return response.data[0]['amount_per_poll']
+
+    raise ValueError(f"No amount per vote found for match {match_id}")
+
+def calculate_points(correct_option, votes, match_id, supabase):
     """
     Calculate points for each user based on their votes.
     Returns dictionaries for winners and losers with their points.
     Pot size is calculated as: number of actual votes * 25
     """
-    POINTS_PER_VOTE = 25   # Each vote contributes 25 points to the pot
-    LOSS_POINTS = -25      # Points lost on incorrect vote or no vote
+
+    #get amount per vote from supabase
+    amount_per_vote = get_amount_per_vote(supabase, match_id)
+    
+    POINTS_PER_VOTE = amount_per_vote   # Each vote contributes 25 points to the pot
+    LOSS_POINTS = -amount_per_vote      # Points lost on incorrect vote or no vote
     
     winners = {}
     losers = {}
@@ -141,7 +190,7 @@ def calculate_points(correct_option, votes):
         else:
             # Both incorrect votes and no votes (None) count as losses
             losers[user_id] = LOSS_POINTS
-    
+
     return winners, losers
 
 def store_voting_results(supabase, match_id, poll_type, winners, losers):
@@ -185,17 +234,17 @@ def store_voting_results(supabase, match_id, poll_type, winners, losers):
 
 def main():
     supabase = get_supabase_client()
-    
+
     # Get unprocessed match results
     unprocessed_results = get_unprocessed_matches(supabase)
-    
+
     if not unprocessed_results:
         print("No new matches to process.")
         return
-    
+
     # Store all points per user
     total_points = defaultdict(int)
-    
+
     # Process each unprocessed result
     for result in unprocessed_results:
         match_id = result['match_id']
@@ -204,7 +253,7 @@ def main():
         
         # Get votes and calculate points
         votes = get_latest_votes(supabase, match_id, poll_type)
-        winners, losers = calculate_points(correct_option, votes)
+        winners, losers = calculate_points(correct_option, votes, match_id, supabase)
         
         # Store results in VOTING_RESULTS table
         store_voting_results(supabase, match_id, poll_type, winners, losers)
