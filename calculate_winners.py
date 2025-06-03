@@ -102,7 +102,7 @@ def get_adhoc_poll_type(supabase, match_id):
         .select('poll_type, match_id')\
         .eq('match_id', match_id)\
         .execute()
-    
+
     if response.data:
         poll_types = [poll['poll_type'] for poll in response.data]
         return list(set(poll_types))
@@ -144,8 +144,13 @@ def get_latest_votes(supabase, match_id, poll_type):
         print(f"Error fetching votes for match {match_id}, poll type {poll_type}: {str(e)}")
         raise
 
-def get_amount_per_vote(supabase, match_id):
+def get_amount_per_vote(supabase, match_id, poll_type):
     """Get the amount per vote for a given match."""
+
+    adhoc_poll_types = get_adhoc_poll_type(supabase, match_id)
+
+    if poll_type in adhoc_poll_types:
+        return 50
 
     response = supabase.table('MATCHES')\
             .select('amount_per_poll')\
@@ -153,11 +158,11 @@ def get_amount_per_vote(supabase, match_id):
             .execute()
 
     if response.data and len(response.data) == 1:
-            return response.data[0]['amount_per_poll']
+        return response.data[0]['amount_per_poll']
 
     raise ValueError(f"No amount per vote found for match {match_id}")
 
-def calculate_points(correct_option, votes, match_id, supabase):
+def calculate_points(correct_option, votes, match_id, poll_type, supabase):
     """
     Calculate points for each user based on their votes.
     Returns dictionaries for winners and losers with their points.
@@ -165,8 +170,8 @@ def calculate_points(correct_option, votes, match_id, supabase):
     """
 
     #get amount per vote from supabase
-    amount_per_vote = get_amount_per_vote(supabase, match_id)
-    
+    amount_per_vote = get_amount_per_vote(supabase, match_id, poll_type)
+
     POINTS_PER_VOTE = amount_per_vote   # Each vote contributes 25 points to the pot
     LOSS_POINTS = -amount_per_vote      # Points lost on incorrect vote or no vote
     
@@ -250,20 +255,21 @@ def main():
         match_id = result['match_id']
         poll_type = result['poll_type']
         correct_option = result['correct_option']
-        
+
         # Get votes and calculate points
         votes = get_latest_votes(supabase, match_id, poll_type)
-        winners, losers = calculate_points(correct_option, votes, match_id, supabase)
-        
+        winners, losers = calculate_points(correct_option, votes, match_id, 
+                                           poll_type, supabase)
+
         # Store results in VOTING_RESULTS table
         store_voting_results(supabase, match_id, poll_type, winners, losers)
-        
+
         # Update total points
         for user_id, points in winners.items():
             total_points[user_id] += points
         for user_id, points in losers.items():
             total_points[user_id] += points
-        
+
         # Print results for this match and poll type
         print(f"\nMatch {match_id} - {poll_type} Results:")
         print(f"Correct option: {correct_option}")
